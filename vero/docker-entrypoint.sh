@@ -58,7 +58,7 @@ if [[ "${MEV_BOOST}" = "true" ]]; then
       ;;
     100)
       __mev_factor="--builder-boost-factor 18446744073709551615"
-      echo "Always prefer MEV builder blocks, build factor 100"
+      echo "Always prefer MEV builder blocks, MEV_BUILD_FACTOR 100"
       ;;
     "")
       __mev_factor=""
@@ -99,6 +99,14 @@ fi
 
 # Uppercase log level
 __log_level="--log-level ${LOG_LEVEL^^}"
+
+# Traces
+if [[ "${COMPOSE_FILE}" =~ (grafana\.yml|grafana-rootless\.yml) ]]; then
+  export OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+  export OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4317
+  export OTEL_EXPORTER_OTLP_INSECURE=true
+  export OTEL_SERVICE_NAME=vero
+fi
 
 if [[ "${DEFAULT_GRAFFITI}" = "true" ]]; then
 # Word splitting is desired for the command line parameters

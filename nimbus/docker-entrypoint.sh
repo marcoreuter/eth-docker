@@ -27,12 +27,6 @@ __normalize_int() {
 }
 
 
-# Remove old low-entropy token, related to Sigma Prime security audit
-# This detection isn't perfect - a user could recreate the token without ./ethd update
-if [[ -f /var/lib/nimbus/api-token.txt && "$(date +%s -r /var/lib/nimbus/api-token.txt)" -lt "$(date +%s --date="2023-05-02 09:00:00")" ]]; then
-  rm /var/lib/nimbus/api-token.txt
-fi
-
 if [[ ! -f /var/lib/nimbus/api-token.txt ]]; then
   token=api-token-0x$(head -c 8 /dev/urandom | od -A n -t u8 | tr -d '[:space:]' | sha256sum | head -c 32)$(head -c 8 /dev/urandom | od -A n -t u8 | tr -d '[:space:]' | sha256sum | head -c 32)
   echo "${token}" > /var/lib/nimbus/api-token.txt
@@ -76,7 +70,7 @@ else
 fi
 
 if [[ -n "${CHECKPOINT_SYNC_URL:+x}" && ! -f /var/lib/nimbus/setupdone ]]; then
-  if [[ "${ARCHIVE_NODE}" = "true" ]]; then
+  if [[ "${NODE_TYPE}" = "archive" ]]; then
     echo "Starting checkpoint sync with backfill and archive reindex. Nimbus will restart when done."
 # Word splitting is desired for the command line parameters
 # shellcheck disable=SC2086
@@ -95,33 +89,35 @@ fi
 if [[ "${MEV_BOOST}" = "true" ]]; then
   __mev_boost="--payload-builder=true --payload-builder-url=${MEV_NODE:-http://mev-boost:18550}"
   echo "MEV Boost enabled"
-  build_factor="$(__normalize_int "${MEV_BUILD_FACTOR}")"
-  case "${build_factor}" in
-    0)
-      __mev_boost=""
-      __mev_factor=""
-      echo "Disabled MEV Boost because MEV_BUILD_FACTOR is 0."
-      echo "WARNING: This conflicts with MEV_BOOST true. Set factor in a range of 1 to 100"
-      ;;
-    [1-9]|[1-9][0-9])
-      local_factor=$((100 - build_factor))
-      __mev_factor="--local-block-value-boost=${local_factor}"
-      echo "Enabled MEV local block value boost of ${local_factor}"
-      ;;
-    100)
-      __mev_factor="--local-block-value-boost=0"
-      echo "Do not boost local blocks, build factor 100"
-      echo "This may still build a local block, if it pays more than a builder block"
-      ;;
-    "")
-      __mev_factor=""
-      echo "Use default --local-block-value-boost"
-      ;;
-    *)
-      __mev_factor=""
-      echo "WARNING: MEV_BUILD_FACTOR has an invalid value of \"${build_factor}\""
-      ;;
-  esac
+  if [[ "${EMBEDDED_VC}" = "true" ]]; then
+    build_factor="$(__normalize_int "${MEV_BUILD_FACTOR}")"
+    case "${build_factor}" in
+      0)
+        __mev_boost=""
+        __mev_factor=""
+        echo "Disabled MEV Boost because MEV_BUILD_FACTOR is 0."
+        echo "WARNING: This conflicts with MEV_BOOST true. Set factor in a range of 1 to 100"
+        ;;
+      [1-9]|[1-9][0-9])
+        local_factor=$((100 - build_factor))
+        __mev_factor="--local-block-value-boost=${local_factor}"
+        echo "Enabled MEV local block value boost of ${local_factor}"
+        ;;
+      100)
+        __mev_factor="--local-block-value-boost=0"
+        echo "Do not boost local blocks, MEV_BUILD_FACTOR 100"
+        echo "This may still build a local block, if it pays more than a builder block"
+        ;;
+      "")
+        __mev_factor=""
+        echo "Use default --local-block-value-boost"
+        ;;
+      *)
+        __mev_factor=""
+        echo "WARNING: MEV_BUILD_FACTOR has an invalid value of \"${build_factor}\""
+        ;;
+    esac
+  fi
 else
   __mev_boost=""
   __mev_factor=""
@@ -137,12 +133,24 @@ fi
 
 __log_level="--log-level=${LOG_LEVEL^^}"
 
-if [[ "${ARCHIVE_NODE}" = "true" ]]; then
-  echo "Nimbus archive node without pruning"
-  __prune="--history=archive"
-else
-  __prune="--history=prune"
-fi
+case "${NODE_TYPE}" in
+  archive)
+    echo "Nimbus archive node without pruning"
+    __prune="--history=archive"
+    ;;
+  full)
+    __prune=""
+    ;;
+  pruned)
+    echo "Nimbus pruned node"
+    __prune="--history=prune"
+    ;;
+  *)
+    echo "ERROR: The node type ${NODE_TYPE} is not known to Eth Docker's Nimbus implementation."
+    sleep 30
+    exit 1
+    ;;
+esac
 
 # Web3signer URL
 if [[ "${EMBEDDED_VC}" = "true" && "${WEB3SIGNER}" = "true" ]]; then

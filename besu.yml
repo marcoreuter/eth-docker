@@ -25,10 +25,10 @@ services:
       - JAVA_OPTS=${BESU_HEAP:--Xmx5g}
       - JWT_SECRET=${JWT_SECRET:-}
       - EL_EXTRAS=${EL_EXTRAS:-}
-      - ARCHIVE_NODE=${EL_ARCHIVE_NODE:-}
-      - MINIMAL_NODE=${EL_MINIMAL_NODE:-}
+      - NODE_TYPE=${EL_NODE_TYPE:-pre-merge-expiry}
       - NETWORK=${NETWORK}
       - IPV6=${IPV6:-false}
+      - COMPOSE_FILE=${COMPOSE_FILE}
     volumes:
       - besu-el-data:/var/lib/besu
       - besu-eth1-data:/var/lib/besu-og

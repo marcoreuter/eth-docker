@@ -56,19 +56,55 @@ else
   __network="--network=${NETWORK}"
 fi
 
+
+# Assume we're not zk-enabled
+__engine="--execution-endpoint ${EL_NODE} --execution-jwt /var/lib/lighthouse/beacon/ee-secret/jwtsecret"
+
+case "${NODE_TYPE}" in
+  archive)
+    echo "Lighthouse archive node without pruning"
+    __prune="--prune-blobs=false"
+    ;;
+  full|pruned)
+    __prune=""
+    ;;
+  pruned-with-zkproofs)
+    if [[ ! "${NETWORK}" = "mainnet" ]]; then
+      echo "Lighthouse with zkProof verification only works on mainnet, as far as Eth Docker is aware."
+      echo "Aborting."
+      sleep 30
+      exit 1
+    fi
+    echo "Lighthouse node with zkProof verification. HIGHLY experimental."
+    echo "Please make sure that you have edited \".env\" and changed:"
+    echo "CL_EXTRAS=--boot-nodes enr:-Oy4QJgMz9S1Eb7s13nKIbulKC0nvnt7AEqbmwxnTdwzptxNCGWjc9ipteUaCwqlu2bZDoNz361vGC_IY4fbdkR1K9iCDeuHYXR0bmV0c4gAAAAAAAAABoNjZ2MEhmNsaWVudNGKTGlnaHRob3VzZYU4LjAuMYRldGgykK1TLOsGAAAAAEcGAAAAAACCaWSCdjSCaXCEisV68INuZmSEzCxc24RxdWljgiMpiXNlY3AyNTZrMaEDEIWq41UTcFUgL8LRletpbIwrrpxznIMN_F5jRgatngmIc3luY25ldHMAg3RjcIIjKIR6a3ZtAQ"
+    echo "LH_SRC_BUILD_TARGET=ethproofs/zkattester-demo"
+    echo "LH_SRC_REPO=https://github.com/ethproofs/lighthouse"
+    echo "LH_DOCKERFILE=Dockerfile.source"
+    echo "MEV_BOOST=true"
+    echo "MEV_BUILD_FACTOR=100"
+    echo "And have source-built Lighthouse with \"./ethd update\""
+    echo "A PBS sidecar needs to be in COMPOSE_FILE, and MEV relays need to be configured"
+    echo "Note the bootnodes ENR may have changed, check on the zkEVM attesting Telegram group!"
+    __prune=""
+    __engine="--execution-proofs"
+    ;;
+  *)
+    echo "ERROR: The node type ${NODE_TYPE} is not known to Eth Docker's Lighthouse implementation."
+    sleep 30
+    exit 1
+    ;;
+esac
+
 # Check whether we should rapid sync
 if [[ -n "${CHECKPOINT_SYNC_URL}" ]]; then
   __checkpoint_sync="--checkpoint-sync-url=${CHECKPOINT_SYNC_URL}"
   echo "Checkpoint sync enabled"
-  if [[ "${ARCHIVE_NODE}" = "true" ]]; then
-    echo "Lighthouse archive node without pruning"
-    __prune="--reconstruct-historic-states --genesis-backfill --disable-backfill-rate-limiting --prune-blobs=false"
-  else
-    __prune=""
+  if [[ "${NODE_TYPE}" = "archive" ]]; then
+    __prune+=" --reconstruct-historic-states --genesis-backfill --disable-backfill-rate-limiting"
   fi
 else
   __checkpoint_sync="--allow-insecure-genesis-sync"
-  __prune=""
 fi
 
 # Check whether we should use MEV Boost
@@ -105,9 +141,20 @@ fi
 __strip_empty_args "$@"
 set -- "${__args[@]}"
 
+# Traces
+if [[ "${COMPOSE_FILE}" =~ (grafana\.yml|grafana-rootless\.yml) ]]; then
+  __trace="--telemetry-collector-url http://tempo:4317 --telemetry-service-name lighthouse"
+# These may become default in future. Here so Lighthouse doesn't murder itself in the meantime
+  export OTEL_TRACES_SAMPLER=parentbased_traceidratio
+  export OTEL_TRACES_SAMPLER_ARG=0.01
+  export OTEL_EXPORTER_OTLP_INSECURE=true
+else
+  __trace=""
+fi
+
 if [[ -f /var/lib/lighthouse/beacon/prune-marker ]]; then
   rm -f /var/lib/lighthouse/beacon/prune-marker
-  if [[ "${ARCHIVE_NODE}" = "true" ]]; then
+  if [[ "${NODE_TYPE}" = "archive" ]]; then
     echo "Lighthouse is an archive node. Not attempting to prune state: Aborting."
     exit 1
   fi
@@ -117,5 +164,5 @@ if [[ -f /var/lib/lighthouse/beacon/prune-marker ]]; then
 else
 # Word splitting is desired for the command line parameters
 # shellcheck disable=SC2086
-  exec "$@" ${__network} ${__mev_boost} ${__checkpoint_sync} ${__prune} ${__beacon_stats} ${__ipv6} ${CL_EXTRAS}
+  exec "$@" ${__network} ${__mev_boost} ${__checkpoint_sync} ${__engine} ${__prune} ${__beacon_stats} ${__trace} ${__ipv6} ${CL_EXTRAS}
 fi

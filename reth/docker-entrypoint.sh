@@ -93,27 +93,36 @@ if [[ -n "${STATIC_DIR}" && ! "${STATIC_DIR}" = ".nada" ]]; then
   __static="--datadir.static-files /var/lib/static"
 fi
 
-if [[ "${ARCHIVE_NODE}" = "true" ]]; then
-  echo "Reth archive node without pruning"
-  __prune=""
-elif [[ "${MINIMAL_NODE}" = "true" ]]; then
-  __prune="--block-interval 5 --prune.senderrecovery.full --prune.accounthistory.distance 10064 --prune.storagehistory.distance 10064 --prune.transactionlookup.distance 10064"
-  case ${NETWORK} in
-    mainnet|sepolia )
-      echo "Reth minimal node with pre-merge history expiry"
-      __prune+=" --prune.bodies.pre-merge --prune.receipts.pre-merge"
-      ;;
-    *)
-      echo "There is no pre-merge history for ${NETWORK} network, EL_MINIMAL_NODE has no effect."
-      __prune+=" --prune.receipts.before 0"
-      ;;
-  esac
-  echo "Pruning parameters: ${__prune}"
-else
-   echo "Reth full node without pre-merge history expiry"
-  __prune="--block-interval 5 --prune.receipts.before 0 --prune.senderrecovery.full --prune.accounthistory.distance 10064 --prune.storagehistory.distance 10064"
-  echo "Pruning parameters: ${__prune}"
-fi
+case "${NODE_TYPE}" in
+  archive)
+    echo "Reth archive node without pruning"
+    __prune=""
+    ;;
+  full)
+    echo "Reth full node without history expiry"
+    __prune="--block-interval 5 --prune.receipts.before 0 --prune.senderrecovery.full --prune.accounthistory.distance 10064 --prune.storagehistory.distance 10064"
+    echo "Pruning parameters: ${__prune}"
+    ;;
+  pre-merge-expiry)
+    __prune="--block-interval 5 --prune.senderrecovery.full --prune.accounthistory.distance 10064 --prune.storagehistory.distance 10064 --prune.transactionlookup.distance 10064"
+    case ${NETWORK} in
+      mainnet|sepolia)
+        echo "Reth minimal node with pre-merge history expiry"
+        __prune+=" --prune.bodies.pre-merge --prune.receipts.pre-merge"
+        ;;
+      *)
+        echo "There is no pre-merge history for ${NETWORK} network, \"pre-merge-expiry\" has no effect."
+        __prune+=" --prune.receipts.before 0"
+        ;;
+    esac
+    echo "Pruning parameters: ${__prune}"
+    ;;
+  *)
+    echo "ERROR: The node type ${NODE_TYPE} is not known to Eth Docker's Reth implementation."
+    sleep 30
+    exit 1
+    ;;
+esac
 
 if [[ -f /var/lib/reth/repair-trie ]]; then
   if [[ "${NETWORK}" =~ ^https?:// ]]; then
@@ -130,9 +139,18 @@ fi
 __strip_empty_args "$@"
 set -- "${__args[@]}"
 
+# Traces
+if [[ "${COMPOSE_FILE}" =~ (grafana\.yml|grafana-rootless\.yml) ]]; then
+  __trace="--tracing-otlp=http://tempo:4318/v1/traces"
+  export OTEL_EXPORTER_OTLP_INSECURE=true
+  export OTEL_SERVICE_NAME=reth
+else
+  __trace=""
+fi
+
 if [[ -f /var/lib/reth/prune-marker ]]; then
   rm -f /var/lib/reth/prune-marker
-  if [[ "${ARCHIVE_NODE}" = "true" ]]; then
+  if [[ "${NODE_TYPE}" = "archive" ]]; then
     echo "Reth is an archive node. Not attempting to prune database: Aborting."
     exit 1
   fi
@@ -142,5 +160,5 @@ if [[ -f /var/lib/reth/prune-marker ]]; then
 else
 # Word splitting is desired for the command line parameters
 # shellcheck disable=SC2086
-  exec "$@" ${__network} ${__verbosity} ${__static} ${__prune} ${EL_EXTRAS}
+  exec "$@" ${__network} ${__verbosity} ${__static} ${__prune} ${__trace} ${EL_EXTRAS}
 fi

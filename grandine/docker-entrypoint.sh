@@ -70,14 +70,26 @@ else
   __network="--network=${NETWORK}"
 fi
 
-if [[ "${ARCHIVE_NODE}" = "true" ]]; then
-  echo "Grandine archive node without pruning"
-  __prune="--back-sync"
-elif [[ "${CL_MINIMAL_NODE}" = "true" ]]; then
-  __prune="--prune-storage"
-else
-  __prune=""
-fi
+case "${NODE_TYPE}" in
+  archive)
+    echo "Grandine archive node without pruning"
+    __prune="--back-sync --archive-storage"
+    ;;
+  pruned)
+    __prune=""
+    ;;
+  aggressive-pruned)
+    __prune="--prune-storage"
+    ;;
+  full)
+    __prune="--back-sync"
+    ;;
+  *)
+    echo "ERROR: The node type ${NODE_TYPE} is not known to Eth Docker's Grandine implementation."
+    sleep 30
+    exit 1
+    ;;
+esac
 
 # Check whether we should rapid sync
 if [[ -n "${CHECKPOINT_SYNC_URL}" ]]; then
@@ -113,8 +125,8 @@ if [[ "${MEV_BOOST}" = "true" ]]; then
         echo "Enabled MEV Build Factor of ${build_factor}"
         ;;
       100)
-        __mev_factor="--default-builder-boost-factor 100"
-        echo "Always prefer MEV builder blocks, build factor 100"
+        __mev_factor="--default-builder-boost-factor 18446744073709551615"
+        echo "Always prefer MEV builder blocks, MEV_BUILD_FACTOR 100"
         ;;
       "")
         __mev_factor=""

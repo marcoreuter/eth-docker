@@ -19,24 +19,28 @@ __strip_empty_args() {
 }
 
 
+if [[ -d /var/lib/ethrex/ee-secret ]]; then
+  rm -rf /var/lib/ethrex/ee-secret/  # Remove legacy dir
+fi
+
 if [[ -n "${JWT_SECRET}" ]]; then
-  echo -n "${JWT_SECRET}" > /var/lib/ethrex/ee-secret/jwtsecret
+  echo -n "${JWT_SECRET}" > /var/lib/ee-secret/jwtsecret
   echo "JWT secret was supplied in .env"
 fi
 
-if [[ ! -f /var/lib/ethrex/ee-secret/jwtsecret ]]; then
+if [[ ! -f /var/lib/ee-secret/jwtsecret ]]; then
   echo "Generating JWT secret"
   secret1=$(head -c 8 /dev/urandom | od -A n -t u8 | tr -d '[:space:]' | sha256sum | head -c 32)
   secret2=$(head -c 8 /dev/urandom | od -A n -t u8 | tr -d '[:space:]' | sha256sum | head -c 32)
-  echo -n "${secret1}""${secret2}" > /var/lib/ethrex/ee-secret/jwtsecret
+  echo -n "${secret1}""${secret2}" > /var/lib/ee-secret/jwtsecret
 fi
 
-if [[ -O /var/lib/ethrex/ee-secret ]]; then
+if [[ -O /var/lib/ee-secret ]]; then
   # In case someone specifies JWT_SECRET but it's not a distributed setup
-  chmod 777 /var/lib/ethrex/ee-secret
+  chmod 777 /var/lib/ee-secret
 fi
-if [[ -O /var/lib/ethrex/ee-secret/jwtsecret ]]; then
-  chmod 666 /var/lib/ethrex/ee-secret/jwtsecret
+if [[ -O /var/lib/ee-secret/jwtsecret ]]; then
+  chmod 666 /var/lib/ee-secret/jwtsecret
 fi
 
 if [[ "${NETWORK}" =~ ^https?:// ]]; then
@@ -63,25 +67,34 @@ else
   __network="--network ${NETWORK}"
 fi
 
-if [[ "${ARCHIVE_NODE}" = "true" ]]; then
-  echo "Ethrex does not support running an archive node; or Eth Docker doesn't know how"
-  sleep 30
-  exit 1
-elif [[ "${MINIMAL_NODE}" = "true" ]]; then
-  echo "Ethrex minimal node with pre-merge history expiry and snap sync"
-  __sync="--syncmode snap"
-else
-  case ${NETWORK} in
-    mainnet|sepolia )
-      echo "Ethrex does not support full sync on ${NETWORK}. Running an expired node with snap sync"
-      __sync="--syncmode snap"
-      ;;
-    *)
-      echo "There is no pre-merge history for ${NETWORK} network, running a full sync as requested"
-      __sync="--syncmode full"
-      ;;
-  esac
-fi
+case "${NODE_TYPE}" in
+  archive)
+    echo "Ethrex does not support running an archive node; or Eth Docker doesn't know how"
+    sleep 30
+    exit 1
+    ;;
+  full)
+    case ${NETWORK} in
+      mainnet|sepolia)
+        echo "Ethrex does not support full sync on ${NETWORK}. Running an expired node with snap sync"
+        __sync="--syncmode snap"
+        ;;
+      *)
+        echo "There is no pre-merge history for ${NETWORK} network, running a full sync as requested"
+        __sync="--syncmode full"
+        ;;
+    esac
+    ;;
+  pre-merge-expiry)
+    echo "Ethrex minimal node with pre-merge history expiry and snap sync"
+    __sync="--syncmode snap"
+    ;;
+  *)
+    echo "ERROR: The node type ${NODE_TYPE} is not known to Eth Docker's Ethrex implementation."
+    sleep 30
+    exit 1
+    ;;
+esac
 
 __strip_empty_args "$@"
 set -- "${__args[@]}"

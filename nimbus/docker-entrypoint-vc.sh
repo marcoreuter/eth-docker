@@ -15,12 +15,6 @@ __normalize_int() {
 }
 
 
-# Remove old low-entropy token, related to Sigma Prime security audit
-# This detection isn't perfect - a user could recreate the token without ./ethd update
-if [[ -f /var/lib/nimbus/api-token.txt && "$(date +%s -r /var/lib/nimbus/api-token.txt)" -lt "$(date +%s --date="2023-05-02 09:00:00")" ]]; then
-  rm /var/lib/nimbus/api-token.txt
-fi
-
 if [[ ! -f /var/lib/nimbus/api-token.txt ]]; then
   token=api-token-0x$(head -c 8 /dev/urandom | od -A n -t u8 | tr -d '[:space:]' | sha256sum | head -c 32)$(head -c 8 /dev/urandom | od -A n -t u8 | tr -d '[:space:]' | sha256sum | head -c 32)
   echo "${token}" > /var/lib/nimbus/api-token.txt
@@ -47,15 +41,12 @@ if [[ "${MEV_BOOST}" = "true" ]]; then
       echo "WARNING: This conflicts with MEV_BOOST true. Set factor in a range of 1 to 100"
       ;;
     [1-9]|[1-9][0-9])
-      #local_factor=$((100 - build_factor))
-      #mev_factor="--local-block-value-boost ${local_factor}"
-      __mev_factor=""
-      echo "Nimbus VC does not support setting a builder boost factor"
+      __mev_factor="--builder-boost-factor=${build_factor}"
+      echo "Enabled MEV Build Factor of ${build_factor}"
       ;;
     100)
-      #__mev_factor="--local-block-value-boost 0"
-      __mev_factor=""
-      echo "Nimbus VC does not support setting a builder boost factor"
+      __mev_factor="--builder-boost-factor=18446744073709551615"
+      echo "Always prefer MEV builder blocks, MEV_BUILD_FACTOR 100"
       ;;
     "")
       __mev_factor=""
