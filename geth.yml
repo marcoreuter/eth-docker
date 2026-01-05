@@ -31,9 +31,9 @@ services:
       - IPV6=${IPV6:-false}
       - ANCIENT_DIR=${ANCIENT_DIR:-}
     volumes:
-      - geth-eth1-data:/var/lib/goethereum
-      - geth-el-data:/var/lib/geth
-      - ${ANCIENT_DIR:-.nada}:/var/lib/ancient
+      - /media/marco/Data/eth-data/geth-el-data:/var/lib/geth
+      - /media/marco/Data/eth-data/geth-eth1-data:/var/lib/goethereum
+      - /media/marco/Data/eth-data/ancient:/var/lib/ancient
       - /etc/localtime:/etc/localtime:ro
       - jwtsecret:/var/lib/geth/ee-secret
     ports:
@@ -77,6 +77,7 @@ services:
       - --authrpc.vhosts=*
       - ${EL_MAX_PEER_COUNT:+--maxpeers}
       - ${EL_MAX_PEER_COUNT:+${EL_MAX_PEER_COUNT}}
+      - --history.transactions=0
     labels:
       - metrics.scrape=true
       - metrics.path=/debug/metrics/prometheus
